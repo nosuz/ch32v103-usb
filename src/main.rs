@@ -57,11 +57,11 @@ const DEV_DESC: [u8; 18] = [
     1, // number of possible configs
 ];
 
-const CONFIG_DESC: [u8; 41] = [
+const CONFIG_DESC: [u8; 34] = [
     // configuration descriptor
     9, // size of descriptor
     0x02, // configuration descriptor (0x02)
-    41, // total length: conf(9) + iface(9) + hid(9) + ep1(7+7)
+    34, // total length: conf(9) + iface(9) + hid(9) + ep1(7)
     0,
     1, // num of ifaces
     1, // num of configs
@@ -74,7 +74,7 @@ const CONFIG_DESC: [u8; 41] = [
     0x04, // interface descriptor (0x04)
     0, // iface #
     0, // Alt string
-    2, // num of endpoints
+    1, // num of endpoints
     0x03, // HID class
     0, // no subclass
     2, // iface protrol: mouse
@@ -91,14 +91,14 @@ const CONFIG_DESC: [u8; 41] = [
     54, // report descriptor length
     0,
 
-    // endpoint 1 OUT descriptor
-    7, // size of descriptor
-    0x05, // descriptor type: endpoint
-    0x01, // endpoint address: endpoint 1 OUT
-    0x03, // transfer type: interrupt
-    MAX_LEN as u8, // max packet size
-    0,
-    10, // polling interval in ms
+    // // endpoint 1 OUT descriptor
+    // 7, // size of descriptor
+    // 0x05, // descriptor type: endpoint
+    // 0x01, // endpoint address: endpoint 1 OUT
+    // 0x03, // transfer type: interrupt
+    // MAX_LEN as u8, // max packet size
+    // 0,
+    // 10, // polling interval in ms
 
     // endpoint 1 IN descriptor
     7, // size of descriptor
@@ -305,7 +305,6 @@ union SetupBuffer {
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct MouseData {
-    _reserved: [u8; 64],
     button: u8,
     x: i8,
     y: i8,
@@ -313,7 +312,7 @@ struct MouseData {
 }
 
 union MouseBuffer {
-    bytes: [u8; 128],
+    bytes: [u8; 64],
     mouse: MouseData,
 }
 
@@ -325,7 +324,7 @@ struct AlignedBuffer {
 
 static mut BUFFER: AlignedBuffer = AlignedBuffer {
     ep0: SetupBuffer { bytes: [0; 64] },
-    ep1: MouseBuffer { bytes: [0; 128] },
+    ep1: MouseBuffer { bytes: [0; 64] },
 };
 
 interrupt!(TIM1_UP, tim1_up);
@@ -537,7 +536,7 @@ fn init_usb() {
         // setup endpoint 1
         (*USBHD::ptr()).uep1_dma.write(|w| w.bits(BUFFER.ep1.bytes.as_ptr() as u16));
         (*USBHD::ptr()).uep4_1_mod.modify(|_, w|
-            w.uep1_rx_en().set_bit().uep1_tx_en().set_bit().uep1_buf_mod().clear_bit()
+            w.uep1_rx_en().clear_bit().uep1_tx_en().set_bit().uep1_buf_mod().clear_bit()
         );
         // UEP0_CTRL = UEP_R_RES_ACK | UEP_T_RES_NAK
         (*USBHD::ptr()).uep1_ctrl__uh_setup.modify(
