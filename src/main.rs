@@ -328,8 +328,6 @@ static mut BUFFER: AlignedBuffer = AlignedBuffer {
     ep1: MouseBuffer { bytes: [0; 128] },
 };
 
-static mut UPDATED_XY: bool = false;
-
 interrupt!(TIM1_UP, tim1_up);
 fn tim1_up() {
     unsafe {
@@ -413,7 +411,9 @@ fn main() -> ! {
         unsafe {
             BUFFER.ep1.mouse.x = rng.gen::<i8>() / 8;
             BUFFER.ep1.mouse.y = rng.gen::<i8>() / 8;
-            UPDATED_XY = true;
+            // waie USB bus idle
+            while !(*USBHD::ptr()).usb_mis_st.read().ums_sie_free().bit_is_set() {}
+            (*USBHD::ptr()).uep1_t_len.write(|w| w.bits(3));
 
             writeln!(
                 &mut log,
@@ -740,17 +740,8 @@ fn usb_handler() {
                         }
                         1 => {
                             // set transfer length
-                            if UPDATED_XY {
-                                len = 3;
-                                UPDATED_XY = false;
-                                critical_section::with(|cs| {
-                                    let mut trigger = TRIGGER.borrow(cs).borrow_mut();
-                                    trigger.as_mut().unwrap().toggle().unwrap();
-                                });
-                            } else {
-                                len = 0;
-                            }
-                            (*USBHD::ptr()).uep1_t_len.write(|w| w.bits(len as u8));
+                            // reset tx length set in main
+                            (*USBHD::ptr()).uep1_t_len.write(|w| w.bits(0));
                         }
                         _ => {
                             unreachable!();
