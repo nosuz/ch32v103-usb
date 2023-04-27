@@ -44,7 +44,7 @@ const DEV_DESC: [u8; 18] = [
     0, // class code. 0: defined in interface
     0, // subclass. 0: unused
     0, // protocol. 0: unused
-    8, // max packet size for endpoint 0
+    MAX_LEN as u8, // max packet size for endpoint 0
     0x01, // vender ID
     0x23,
     0x45, // product ID
@@ -276,7 +276,7 @@ enum DescIndex {
 static mut DESC_IDX: DescIndex = DescIndex::Device;
 
 const MAX_LEN: usize = 8;
-static mut REQ_LEN: usize = 64;
+static mut REQ_LEN: usize = MAX_LEN;
 static mut LAST_P: usize = 0; // end of descriptor
 static mut BUF_P: usize = 0;
 
@@ -298,7 +298,7 @@ struct SetupData {
 }
 
 union SetupBuffer {
-    bytes: [u8; 64],
+    bytes: [u8; 8],
     setup: SetupData,
 }
 
@@ -312,7 +312,7 @@ struct MouseData {
 }
 
 union MouseBuffer {
-    bytes: [u8; 64],
+    bytes: [u8; 8],
     mouse: MouseData,
 }
 
@@ -323,8 +323,8 @@ struct AlignedBuffer {
 }
 
 static mut BUFFER: AlignedBuffer = AlignedBuffer {
-    ep0: SetupBuffer { bytes: [0; 64] },
-    ep1: MouseBuffer { bytes: [0; 64] },
+    ep0: SetupBuffer { bytes: [0; 8] },
+    ep1: MouseBuffer { bytes: [0; 8] },
 };
 
 interrupt!(TIM1_UP, tim1_up);
