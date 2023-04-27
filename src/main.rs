@@ -610,11 +610,11 @@ fn usb_handler() {
                                             0x303 => { DescIndex::String3 }
                                             0x304 => { DescIndex::String4 }
                                             _ => {
-                                                critical_section::with(|cs| {
-                                                    let mut trigger =
-                                                        TRIGGER.borrow(cs).borrow_mut();
-                                                    trigger.as_mut().unwrap().toggle().unwrap();
-                                                });
+                                                // critical_section::with(|cs| {
+                                                //     let mut trigger =
+                                                //         TRIGGER.borrow(cs).borrow_mut();
+                                                //     trigger.as_mut().unwrap().toggle().unwrap();
+                                                // });
 
                                                 unreachable!();
                                             }
@@ -626,11 +626,11 @@ fn usb_handler() {
                                             // return report descriptor
                                             0x2200 => { DescIndex::Report }
                                             _ => {
-                                                critical_section::with(|cs| {
-                                                    let mut trigger =
-                                                        TRIGGER.borrow(cs).borrow_mut();
-                                                    trigger.as_mut().unwrap().toggle().unwrap();
-                                                });
+                                                // critical_section::with(|cs| {
+                                                //     let mut trigger =
+                                                //         TRIGGER.borrow(cs).borrow_mut();
+                                                //     trigger.as_mut().unwrap().toggle().unwrap();
+                                                // });
 
                                                 DescIndex::Device
                                             }
@@ -762,6 +762,11 @@ fn usb_handler() {
             // clearing USB_INT_GG makes ACK for transaction
             (*USBHD::ptr()).usb_int_fg.modify(|_, w| w.uif_transfer().set_bit())
         } else if int_gf.uif_suspend().bit_is_set() {
+            critical_section::with(|cs| {
+                let mut trigger = TRIGGER.borrow(cs).borrow_mut();
+                trigger.as_mut().unwrap().toggle().unwrap();
+            });
+
             (*USBHD::ptr()).usb_int_fg.modify(|_, w| w.uif_suspend().set_bit());
             if (*USBHD::ptr()).usb_mis_st.read().ums_suspend().bit_is_set() {
                 (*USBHD::ptr()).usb_int_fg.write(|w| w.bits(0x1f)); // clear all interrupts
