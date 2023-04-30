@@ -1,0 +1,48 @@
+[package]
+name = "ch32v103_usb_cdc"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# provide implementation for critical-section
+riscv = { version = "0.10.1", features = ["critical-section-single-hart"] }
+# riscv-rt = "0.11.0"
+panic-halt = "0.2.0"
+critical-section = "1.1.1"
+rand = { version = "0.8.5", default_features = false, features = ["small_rng"] }
+
+[dependencies.ch32v-rt]
+path = "../../ch32v-rt"
+# git = "https://github.com/nosuz/ch32v-rt.git"
+features = ["interrupt", "ch32v103"]
+
+[dependencies.ch32v1]
+path = "../../ch32-rs-nightlies/ch32v1"
+# git = "https://github.com/ch32-rs/ch32-rs-nightlies.git"
+# git = "https://github.com/nosuz/ch32-rs-nightlies.git"
+
+version = "0.1.6"
+features = [
+    "ch32v103",
+    "rt", # for interrupt macro.
+    "critical-section", # without this, Peripherals::take() fails.
+]
+
+[dependencies.ch32v103_hal]
+path = "../../ch32v103-hal"
+features = [
+    "ch32v103",
+    "usbhd"
+    # "sleep",
+    # "stop",
+    # "standby"
+]
+
+[profile.release]
+# Minimize binary size.
+lto = true # link time optimizations; 836
+opt-level = "s" # binary size optimization; z: 880, s: 1072
+# lto and opt-level=z make 640
+# lto and opt-level=s make 636
