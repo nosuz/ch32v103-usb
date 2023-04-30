@@ -39,8 +39,8 @@ static TRIGGER: Mutex<RefCell<Option<TriggerPin>>> = Mutex::new(RefCell::new(Non
 const DEV_DESC: [u8; 18] = [
     18, // size of descriptor
     0x01, // device descriptor (0x01)
-    0x10, // USB 1.10 in BCD
-    0x01,
+    0x00, // USB 2.0 in BCD
+    0x02,
     0, // class code. 0: defined in interface
     0, // subclass. 0: unused
     0, // protocol. 0: unused
@@ -67,7 +67,7 @@ const CONFIG_DESC: [u8; 34] = [
     1, // num of configs
     0, // no config string
     0x80, // device attrib: bus powered, no remote wakeup
-    49, // max power by 2mA: 49 * 2mA = 08mA
+    49, // max power by 2mA: 49 * 2mA = 98mA
 
     // interface descriptor
     9, // size of descriptor
@@ -252,7 +252,9 @@ const STR_4: [u8; 22] = [
     0,
 ];
 
-const USB_DESC: [&[u8]; 8] = [
+const QUAL_DESC: [u8; 0] = [];
+
+const USB_DESC: [&[u8]; 9] = [
     &DEV_DESC,
     &CONFIG_DESC,
     &LANG_IDS,
@@ -261,6 +263,7 @@ const USB_DESC: [&[u8]; 8] = [
     &STR_3,
     &STR_4,
     &RPT_DESC,
+    &QUAL_DESC,
 ];
 #[derive(Copy, Clone)]
 enum DescIndex {
@@ -272,10 +275,12 @@ enum DescIndex {
     String3 = 5,
     String4 = 6,
     Report = 7,
+    Qualifier = 8,
+    Stalled = 0xff,
 }
-static mut DESC_IDX: DescIndex = DescIndex::Device;
+static mut DESC_IDX: DescIndex = DescIndex::Stalled;
 
-const MAX_LEN: usize = 8;
+const MAX_LEN: usize = 64;
 static mut REQ_LEN: usize = MAX_LEN;
 static mut LAST_P: usize = 0; // end of descriptor
 static mut BUF_P: usize = 0;
@@ -284,6 +289,8 @@ enum SetupState {
     Reset,
     GetDescriptor,
     SetAddress,
+    Skip,
+    Stalled,
 }
 static mut SETUP_STATE: SetupState = SetupState::Reset;
 
@@ -298,7 +305,7 @@ struct SetupData {
 }
 
 union SetupBuffer {
-    bytes: [u8; 8],
+    bytes: [u8; 64],
     setup: SetupData,
 }
 
@@ -312,7 +319,7 @@ struct MouseData {
 }
 
 union MouseBuffer {
-    bytes: [u8; 8],
+    bytes: [u8; 64],
     mouse: MouseData,
 }
 
@@ -323,8 +330,8 @@ struct AlignedBuffer {
 }
 
 static mut BUFFER: AlignedBuffer = AlignedBuffer {
-    ep0: SetupBuffer { bytes: [0; 8] },
-    ep1: MouseBuffer { bytes: [0; 8] },
+    ep0: SetupBuffer { bytes: [0; 64] },
+    ep1: MouseBuffer { bytes: [0; 64] },
 };
 
 interrupt!(TIM1_UP, tim1_up);
@@ -491,7 +498,7 @@ fn init_usb() {
                 .uc_host_mode()
                 .clear_bit() // set device mode
                 .uc_low_speed()
-                .set_bit()
+                .clear_bit() // 12M full-speed
                 .mask_uc_sys_ctrl()
                 .bits(0b11)
                 .uc_int_busy() // *
@@ -510,7 +517,7 @@ fn init_usb() {
                 .ud_pd_dis__uh_pd_dis()
                 .set_bit()
                 .ud_low_speed__uh_low_speed()
-                .set_bit()
+                .clear_bit() // 12M full-speed
                 .ud_port_en__uh_port_en()
                 .set_bit()
         );
@@ -590,7 +597,6 @@ fn usb_handler() {
                             0x05 => {
                                 // SET_ADDRESS
                                 SETUP_STATE = SetupState::SetAddress;
-                                len = 0;
                             }
                             0x06 => {
                                 // GET_DESCRIPTOR
@@ -609,6 +615,11 @@ fn usb_handler() {
                                             0x302 => { DescIndex::String2 }
                                             0x303 => { DescIndex::String3 }
                                             0x304 => { DescIndex::String4 }
+                                            0x600 => {
+                                                // return device qualifier for USB 2.0
+                                                // DescIndex::Qualifier
+                                                DescIndex::Stalled
+                                            }
                                             _ => {
                                                 // critical_section::with(|cs| {
                                                 //     let mut trigger =
@@ -616,7 +627,7 @@ fn usb_handler() {
                                                 //     trigger.as_mut().unwrap().toggle().unwrap();
                                                 // });
 
-                                                unreachable!();
+                                                DescIndex::Stalled
                                             }
                                         };
                                     }
@@ -632,49 +643,58 @@ fn usb_handler() {
                                                 //     trigger.as_mut().unwrap().toggle().unwrap();
                                                 // });
 
-                                                DescIndex::Device
+                                                DescIndex::Stalled
                                             }
                                         };
                                     }
                                     _ => {
-                                        unreachable!();
+                                        DESC_IDX = DescIndex::Stalled;
                                     }
                                 }
 
-                                REQ_LEN = BUFFER.ep0.setup.length as usize;
-
-                                // reset pointer
-                                BUF_P = 0;
-                                // set max data size
-                                LAST_P = USB_DESC[DESC_IDX as usize].len() as usize;
-                                if LAST_P > REQ_LEN {
-                                    LAST_P = REQ_LEN;
-                                }
-
-                                if LAST_P > BUF_P {
-                                    // set available max length
-                                    len = LAST_P - BUF_P;
-                                    if len > MAX_LEN {
-                                        len = MAX_LEN;
+                                match DESC_IDX {
+                                    DescIndex::Stalled => {
+                                        SETUP_STATE = SetupState::Stalled;
                                     }
-                                    // copy data to endpoint buffer
-                                    for i in 0..len {
-                                        BUFFER.ep0.bytes[i] = USB_DESC[DESC_IDX as usize][
-                                            BUF_P + i
-                                        ];
+                                    _ => {
+                                        REQ_LEN = BUFFER.ep0.setup.length as usize;
+
+                                        // reset pointer
+                                        BUF_P = 0;
+                                        // set max data size
+                                        LAST_P = USB_DESC[DESC_IDX as usize].len() as usize;
+                                        if LAST_P > REQ_LEN {
+                                            LAST_P = REQ_LEN;
+                                        }
+
+                                        if LAST_P > BUF_P {
+                                            // set available max length
+                                            len = LAST_P - BUF_P;
+                                            if len > MAX_LEN {
+                                                len = MAX_LEN;
+                                            }
+                                            // copy data to endpoint buffer
+                                            for i in 0..len {
+                                                BUFFER.ep0.bytes[i] = USB_DESC[DESC_IDX as usize][
+                                                    BUF_P + i
+                                                ];
+                                            }
+                                            // update pointer
+                                            BUF_P += len;
+                                        }
                                     }
-                                    // update pointer
-                                    BUF_P += len;
                                 }
                             }
                             0x09 => {
                                 // SET_CONFIGURATION
                                 // configure to BUFFER.ep0.setup_value
                                 if BUFFER.ep0.setup.request_type == 0x00 {
+                                    SETUP_STATE = SetupState::Skip;
                                 }
                             }
                             0x0a => {
                                 if BUFFER.ep0.setup.request_type == 0x21 {
+                                    SETUP_STATE = SetupState::Skip;
                                 }
                             }
                             _ => {
@@ -682,22 +702,45 @@ fn usb_handler() {
                             }
                         }
 
+                        // default lenght is 0 and usless
+                        // if SETUP_STATE != SetupState::GetDescriptor {
+                        //     len = 0;
+                        // }
+
                         // set transfer length
                         (*USBHD::ptr()).uep0_t_len.write(|w| w.bits(len as u8));
-                        // UEP0_CTRL = bUEP_R_TOG | bUEP_T_TOG | UEP_R_RES_ACK | UEP_T_RES_ACK;// Expect DATA1, Answer ACK
-                        (*USBHD::ptr()).uep0_ctrl.modify(
-                            |_, w|
-                                w
-                                    .uep_r_tog()
-                                    .set_bit()
-                                    .uep_t_tog()
-                                    .set_bit()
-                                    .mask_uep_r_res()
-                                    .bits(0) // ACK
-                                    .mask_uep_t_res()
-                                    .bits(0) // ACK
-                            // .bits(0b10) // NAK
-                        );
+
+                        match SETUP_STATE {
+                            SetupState::Stalled => {
+                                (*USBHD::ptr()).uep0_ctrl.modify(
+                                    |_, w|
+                                        w
+                                            .uep_r_tog()
+                                            .set_bit()
+                                            .uep_t_tog()
+                                            .set_bit()
+                                            .mask_uep_r_res()
+                                            .bits(0b11) // STALL
+                                            .mask_uep_t_res()
+                                            .bits(0b11) // STALL
+                                );
+                            }
+                            _ => {
+                                // UEP0_CTRL = bUEP_R_TOG | bUEP_T_TOG | UEP_R_RES_ACK | UEP_T_RES_ACK;// Expect DATA1, Answer ACK
+                                (*USBHD::ptr()).uep0_ctrl.modify(
+                                    |_, w|
+                                        w
+                                            .uep_r_tog()
+                                            .set_bit()
+                                            .uep_t_tog()
+                                            .set_bit()
+                                            .mask_uep_r_res()
+                                            .bits(0) // ACK
+                                            .mask_uep_t_res()
+                                            .bits(0) // ACK
+                                );
+                            }
+                        }
                     }
                 }
                 0b10 => {
@@ -726,6 +769,9 @@ fn usb_handler() {
                                         // update pointer
                                         BUF_P += len;
                                     }
+                                }
+                                SetupState::Skip | SetupState::Stalled => {
+                                    // do nothing
                                 }
                                 _ => {
                                     unreachable!();
