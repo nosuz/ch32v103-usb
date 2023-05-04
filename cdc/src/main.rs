@@ -7,7 +7,8 @@
 use core::cell::RefCell;
 use critical_section::Mutex;
 
-use core::ptr::read_volatile;
+use core::sync::atomic::{ AtomicUsize, Ordering };
+use core::ptr::{ read_volatile, write_volatile };
 
 // provide implementation for critical-section
 use ch32v_rt::entry;
@@ -332,46 +333,66 @@ static mut BUFFER: AlignedBuffer = AlignedBuffer {
 };
 
 const RINGBUFFER_SIZE: usize = 32;
+
+// Thank you, chatGPT. But some fixes is required.
 struct RingBuffer {
     buffer: [u8; RINGBUFFER_SIZE],
-    read_idx: usize,
-    write_idx: usize,
+    head: AtomicUsize,
+    tail: AtomicUsize,
 }
 
 impl RingBuffer {
-    fn push(&mut self, value: u8) -> Result<(), u8> {
-        let next_write_idx = (self.write_idx + 1) % RINGBUFFER_SIZE;
-        if next_write_idx == self.read_idx {
-            return Err(value);
+    fn next_index(&self, index: usize) -> usize {
+        (index + 1) % RINGBUFFER_SIZE
+    }
+
+    fn push(&mut self, item: u8) -> Result<(), u8> {
+        let head = self.head.load(Ordering::Acquire);
+        let tail = self.tail.load(Ordering::Relaxed);
+
+        let next_head = self.next_index(head);
+
+        if next_head == tail {
+            return Err(item);
         }
-        self.buffer[next_write_idx] = value;
-        self.write_idx = next_write_idx;
+
+        // head is OK.
+        let raw_ptr: *mut u8 = &mut self.buffer[head];
+        unsafe {
+            write_volatile(raw_ptr, item);
+        }
+
+        self.head.store(next_head, Ordering::Release);
+
         Ok(())
     }
 
-    fn pop(&mut self) -> Option<u8> {
-        if self.read_idx == self.write_idx {
+    fn pop(&self) -> Option<u8> {
+        let tail = self.tail.load(Ordering::Acquire);
+        let head = self.head.load(Ordering::Relaxed);
+
+        if tail == head {
             return None;
         }
-        let value = self.buffer[self.read_idx];
-        self.read_idx = (self.read_idx + 1) % RINGBUFFER_SIZE;
-        Some(value)
+
+        let item = unsafe { read_volatile(&self.buffer[tail]) };
+
+        self.tail.store(self.next_index(tail), Ordering::Release);
+
+        Some(item)
     }
 
-    fn is_full(&mut self) -> bool {
-        let next_write_idx = (self.write_idx + 1) % RINGBUFFER_SIZE;
-        // magic recipe
-        let raw_ptr: *mut usize = &mut self.read_idx;
-        unsafe {
-            return if next_write_idx == read_volatile(raw_ptr) { true } else { false };
-        }
+    pub fn is_full(&self) -> bool {
+        let head = self.head.load(Ordering::Relaxed);
+        let next_head = self.next_index(head);
+        next_head == self.tail.load(Ordering::Acquire)
     }
 }
 
 static mut RINGBUFFER: RingBuffer = RingBuffer {
     buffer: [0; RINGBUFFER_SIZE],
-    read_idx: 0,
-    write_idx: 0,
+    head: AtomicUsize::new(0),
+    tail: AtomicUsize::new(0),
 };
 
 const HELLO: [u8; 13] = [
