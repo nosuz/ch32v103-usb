@@ -7,9 +7,6 @@
 use core::cell::RefCell;
 use critical_section::Mutex;
 
-use core::sync::atomic::{ AtomicUsize, Ordering };
-use core::ptr::{ read_volatile, write_volatile };
-
 // provide implementation for critical-section
 use ch32v_rt::entry;
 use ch32v_rt::interrupt;
@@ -332,67 +329,14 @@ static mut BUFFER: AlignedBuffer = AlignedBuffer {
     ep3_tx: PlainBuffer { bytes: [0; MAX_LEN] },
 };
 
-const RINGBUFFER_SIZE: usize = 32;
-
-// Thank you, chatGPT. But some fixes is required.
-struct RingBuffer {
-    buffer: [u8; RINGBUFFER_SIZE],
-    head: AtomicUsize,
-    tail: AtomicUsize,
-}
-
-impl RingBuffer {
-    fn next_index(&self, index: usize) -> usize {
-        (index + 1) % RINGBUFFER_SIZE
-    }
-
-    fn push(&mut self, item: u8) -> Result<(), u8> {
-        let head = self.head.load(Ordering::Acquire);
-        let tail = self.tail.load(Ordering::Relaxed);
-
-        let next_head = self.next_index(head);
-
-        if next_head == tail {
-            return Err(item);
-        }
-
-        // head is OK.
-        let raw_ptr: *mut u8 = &mut self.buffer[head];
-        unsafe {
-            write_volatile(raw_ptr, item);
-        }
-
-        self.head.store(next_head, Ordering::Release);
-
-        Ok(())
-    }
-
-    fn pop(&self) -> Option<u8> {
-        let tail = self.tail.load(Ordering::Acquire);
-        let head = self.head.load(Ordering::Relaxed);
-
-        if tail == head {
-            return None;
-        }
-
-        let item = unsafe { read_volatile(&self.buffer[tail]) };
-
-        self.tail.store(self.next_index(tail), Ordering::Release);
-
-        Some(item)
-    }
-
-    pub fn is_full(&self) -> bool {
-        let head = self.head.load(Ordering::Relaxed);
-        let next_head = self.next_index(head);
-        next_head == self.tail.load(Ordering::Acquire)
-    }
-}
+pub mod ring_buffer;
+use ring_buffer::RingBuffer;
+use core::sync::atomic::AtomicUsize;
 
 static mut RINGBUFFER: RingBuffer = RingBuffer {
-    buffer: [0; RINGBUFFER_SIZE],
-    head: AtomicUsize::new(0),
-    tail: AtomicUsize::new(0),
+    buffer: [0; crate::ring_buffer::RINGBUFFER_SIZE],
+    write_index: AtomicUsize::new(0),
+    read_index: AtomicUsize::new(0),
 };
 
 const HELLO: [u8; 13] = [
@@ -936,6 +880,7 @@ fn usb_handler() {
                         2 => {
                             // DATA OUT
                             make_trigger();
+                            let _ = RINGBUFFER.push(BUFFER.ep2_rx.bytes[0]);
                         }
                         _ => {
                             make_trigger();
