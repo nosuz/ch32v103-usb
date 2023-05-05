@@ -1,71 +1,74 @@
-use core::sync::atomic::{ AtomicUsize, Ordering };
-use core::ptr::{ read_volatile, write_volatile };
+#[macro_export]
+macro_rules! push_until_ok {
+    ($buffer:expr, $value:expr) => {
+        loop {
+            let result = unsafe {$buffer.push($value)};
+            if result == Ok(()) {
+                break;
+            }
+        }
+    };
+}
 
-pub const RINGBUFFER_SIZE: usize = 32;
+use core::sync::atomic::{ AtomicUsize, Ordering };
+
+use crate::usb::handler::MAX_LEN;
+pub const RING_BUFFER_SIZE: usize = MAX_LEN * 4;
 
 // Thank you, chatGPT. But some fixes is required.
 pub struct RingBuffer {
-    pub buffer: [u8; RINGBUFFER_SIZE],
-    pub write_index: AtomicUsize,
-    pub read_index: AtomicUsize,
+    pub buffer: [u8; RING_BUFFER_SIZE],
+    pub write_pos: AtomicUsize,
+    pub read_pos: AtomicUsize,
 }
 
 impl RingBuffer {
-    fn next_index(&self, index: usize) -> usize {
-        (index + 1) % RINGBUFFER_SIZE
+    fn next_pos(&self, pos: usize) -> usize {
+        (pos + 1) % RING_BUFFER_SIZE
     }
 
     pub fn push(&mut self, item: u8) -> Result<(), u8> {
-        let write_index = self.write_index.load(Ordering::Acquire);
-        let read_index = self.read_index.load(Ordering::Relaxed);
+        let write_pos = self.write_pos.load(Ordering::Acquire);
+        let read_pos = self.read_pos.load(Ordering::Relaxed);
 
-        let next_write_index = self.next_index(write_index);
+        let next_write_pos = self.next_pos(write_pos);
 
-        if next_write_index == read_index {
+        if next_write_pos == read_pos {
             return Err(item);
         }
 
-        // write_index is OK.
-        let raw_ptr: *mut u8 = &mut self.buffer[write_index];
-        unsafe {
-            write_volatile(raw_ptr, item);
-        }
+        // write_pos is OK.
+        self.buffer[write_pos] = item;
 
-        self.write_index.store(next_write_index, Ordering::Release);
+        self.write_pos.store(next_write_pos, Ordering::Release);
 
         Ok(())
     }
 
     pub fn pop(&self) -> Option<u8> {
-        let read_index = self.read_index.load(Ordering::Acquire);
-        let write_index = self.write_index.load(Ordering::Relaxed);
+        let read_pos = self.read_pos.load(Ordering::Acquire);
+        let write_pos = self.write_pos.load(Ordering::Relaxed);
 
-        if read_index == write_index {
+        if read_pos == write_pos {
             return None;
         }
 
-        let item = unsafe { read_volatile(&self.buffer[read_index]) };
+        let item = unsafe { self.buffer[read_pos] };
 
-        self.read_index.store(self.next_index(read_index), Ordering::Release);
+        self.read_pos.store(self.next_pos(read_pos), Ordering::Release);
 
         Some(item)
     }
 
     pub fn is_full(&self) -> bool {
-        let write_index = self.write_index.load(Ordering::Relaxed);
-        let next_write_index = self.next_index(write_index);
-        next_write_index == self.read_index.load(Ordering::Acquire)
+        let write_pos = self.write_pos.load(Ordering::Relaxed);
+        let next_write_pos = self.next_pos(write_pos);
+        next_write_pos == self.read_pos.load(Ordering::Acquire)
     }
 
-    // TODO: check
     pub fn space(&self) -> usize {
-        let write_index = self.write_index.load(Ordering::Relaxed);
-        let read_index = self.read_index.load(Ordering::Relaxed);
-        let count = read_index.wrapping_sub(write_index + 1);
-        if write_index >= read_index {
-            self.buffer.len() - count
-        } else {
-            count
-        }
+        let write_pos = self.write_pos.load(Ordering::Relaxed);
+        let read_pos = self.read_pos.load(Ordering::Relaxed);
+        (read_pos + RING_BUFFER_SIZE - write_pos - 1) % RING_BUFFER_SIZE
     }
 }
