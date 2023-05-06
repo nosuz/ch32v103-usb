@@ -46,3 +46,7 @@ lto = true # link time optimizations; 836
 opt-level = "s" # binary size optimization; z: 880, s: 1072
 # lto and opt-level=z make 640
 # lto and opt-level=s make 636
+
+[features]
+default = []
+# full_speed = []
