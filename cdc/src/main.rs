@@ -126,9 +126,7 @@ fn main() -> ! {
     loop {
         delay.delay_ms(500);
         push_until_ok!(RING_BUFFER, rng.gen::<u8>() / 26 + 65);
-        writeln!(&mut log, "3").unwrap();
         push_until_ok!(RING_BUFFER, b':');
-        writeln!(&mut log, "4").unwrap();
 
         for i in 0..HELLO.len() {
             push_until_ok!(RING_BUFFER, HELLO[i]);
