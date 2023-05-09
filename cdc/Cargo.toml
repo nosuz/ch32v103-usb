@@ -48,5 +48,6 @@ opt-level = "s" # binary size optimization; z: 880, s: 1072
 # lto and opt-level=s make 636
 
 [features]
-default = []
-# full_speed = []
+full_speed = []
+# default = ["full_speed"] # 12M full speed
+default = [] # 1.5M low speed
