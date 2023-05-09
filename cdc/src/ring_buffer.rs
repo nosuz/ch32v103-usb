@@ -10,24 +10,31 @@ macro_rules! push_until_ok {
     };
 }
 
+use core::mem::MaybeUninit;
 use core::sync::atomic::{ AtomicUsize, Ordering };
 
-use crate::usb::handler::MAX_LEN;
-pub const RING_BUFFER_SIZE: usize = MAX_LEN * 4;
-
 // Thank you, chatGPT. But some fixes is required.
-pub struct RingBuffer {
-    pub buffer: [u8; RING_BUFFER_SIZE],
-    pub write_pos: AtomicUsize,
-    pub read_pos: AtomicUsize,
+pub struct RingBuffer<T, const N: usize> {
+    buffer: [MaybeUninit<T>; N],
+    write_pos: AtomicUsize,
+    read_pos: AtomicUsize,
 }
 
-impl RingBuffer {
+impl<T, const N: usize> RingBuffer<T, N> {
+    pub const fn new() -> Self {
+        Self {
+            buffer: unsafe {
+                MaybeUninit::uninit().assume_init()
+            },
+            write_pos: AtomicUsize::new(0),
+            read_pos: AtomicUsize::new(0),
+        }
+    }
     fn next_pos(&self, pos: usize) -> usize {
-        (pos + 1) % RING_BUFFER_SIZE
+        (pos + 1) % N
     }
 
-    pub fn push(&mut self, item: u8) -> Result<(), u8> {
+    pub fn push(&mut self, item: T) -> Result<(), T> {
         let write_pos = self.write_pos.load(Ordering::Acquire);
         let read_pos = self.read_pos.load(Ordering::Relaxed);
 
@@ -38,14 +45,16 @@ impl RingBuffer {
         }
 
         // write_pos is OK.
-        self.buffer[write_pos] = item;
+        unsafe {
+            self.buffer[write_pos].as_mut_ptr().write(item);
+        }
 
         self.write_pos.store(next_write_pos, Ordering::Release);
 
         Ok(())
     }
 
-    pub fn pop(&self) -> Option<u8> {
+    pub fn pop(&self) -> Option<T> {
         let read_pos = self.read_pos.load(Ordering::Acquire);
         let write_pos = self.write_pos.load(Ordering::Relaxed);
 
@@ -53,7 +62,7 @@ impl RingBuffer {
             return None;
         }
 
-        let item = unsafe { self.buffer[read_pos] };
+        let item = unsafe { self.buffer[read_pos].as_ptr().read() };
 
         self.read_pos.store(self.next_pos(read_pos), Ordering::Release);
 
@@ -69,6 +78,6 @@ impl RingBuffer {
     pub fn space(&self) -> usize {
         let write_pos = self.write_pos.load(Ordering::Relaxed);
         let read_pos = self.read_pos.load(Ordering::Relaxed);
-        (read_pos + RING_BUFFER_SIZE - write_pos - 1) % RING_BUFFER_SIZE
+        (read_pos + N - write_pos - 1) % N
     }
 }

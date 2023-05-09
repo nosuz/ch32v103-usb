@@ -41,13 +41,10 @@ static TRIGGER: Mutex<RefCell<Option<TriggerPin>>> = Mutex::new(RefCell::new(Non
 
 pub mod ring_buffer;
 use ring_buffer::RingBuffer;
-use core::sync::atomic::AtomicUsize;
 
-pub static mut RING_BUFFER: RingBuffer = RingBuffer {
-    buffer: [0; crate::ring_buffer::RING_BUFFER_SIZE],
-    write_pos: AtomicUsize::new(0),
-    read_pos: AtomicUsize::new(0),
-};
+use crate::usb::handler::MAX_LEN;
+const RING_BUFFER_SIZE: usize = MAX_LEN * 4;
+pub static mut RING_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 
 const HELLO: [u8; 13] = [
     b'H',
