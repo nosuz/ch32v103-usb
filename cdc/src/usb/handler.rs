@@ -59,6 +59,8 @@ enum UsbState {
     GetDescriptor,
     SetAddress,
     SetConfiguration,
+    // CDC class specific
+    SetLineCoding,
 }
 static mut USB_STATE: UsbState = UsbState::Ack;
 
@@ -300,12 +302,15 @@ pub fn usb_interrupt_handler() {
 
                                         // CDC class specific requets
                                         Request::SetLineCoding => {
-                                            USB_STATE = UsbState::Ack;
+                                            // SetLineCoding = 0x20
+                                            USB_STATE = UsbState::SetLineCoding;
                                             // make_trigger();
-                                            setup_serial();
                                         }
-                                        // Request::GetLineCoding => {}
+                                        // Request::GetLineCoding => {
+                                        //     // GetLineCoding = 0x21
+                                        // }
                                         Request::SetControlLineState => {
+                                            // SetControlLineState = 0x22
                                             USB_STATE = UsbState::Ack;
                                             // make_trigger();
                                             set_control_lines();
@@ -378,6 +383,14 @@ pub fn usb_interrupt_handler() {
                         }
                         0b00 => {
                             // OUT
+                            match USB_STATE {
+                                UsbState::SetLineCoding => {
+                                    setup_serial();
+                                }
+                                _ => {
+                                    // ACK comes here
+                                }
+                            }
                         }
                         _ => {
                             unreachable!();
@@ -417,6 +430,7 @@ pub fn usb_interrupt_handler() {
                         }
                         0b00 => {
                             // OUT
+                            // make_trigger();
                             cdc_data_out();
                         }
                         _ => {
