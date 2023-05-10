@@ -43,7 +43,7 @@ const RING_BUFFER_SIZE: usize = MAX_LEN * 4;
 pub static mut TX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 pub static mut RX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 
-pub static mut SPEED_BUFFER: RingBuffer<u32, 8> = RingBuffer::new();
+pub static mut SPEED_BUFFER: RingBuffer<u32, 4> = RingBuffer::new();
 
 interrupt!(TIM1_UP, tim1_up);
 fn tim1_up() {
