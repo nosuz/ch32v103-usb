@@ -30,6 +30,7 @@ enum RequestType {
     Reserved,
 }
 
+#[repr(u8)]
 #[derive(Copy, Clone)]
 enum Request {
     GetStatus = 0,
