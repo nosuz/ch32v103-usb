@@ -1,7 +1,7 @@
 use ch32v1::ch32v103::{ USBHD };
 
 use crate::usb::handler::{ BUFFER, MAX_LEN };
-use crate::RING_BUFFER;
+use crate::{ TX_BUFFER, RX_BUFFER, SPEED_BUFFER };
 
 static mut WAIT_DATA_OUT: bool = false;
 
@@ -95,13 +95,11 @@ pub fn cdc_command_in() {
 pub fn cdc_data_out() {
     // DATA OUT
     unsafe {
-        // let buffer = &mut *RING_BUFFER.get();
-        // let _ = buffer.push(BUFFER.ep2_rx[0]);
         for i in 0..(*USBHD::ptr()).usb_rx_len.read().bits() as usize {
-            let _ = RING_BUFFER.push(BUFFER.ep2_rx[i]);
+            let _ = TX_BUFFER.push(BUFFER.ep2_rx[i]);
         }
 
-        if RING_BUFFER.space() < MAX_LEN * 2 {
+        if TX_BUFFER.space() < MAX_LEN * 2 {
             // Nak next for wait and retry
             (*USBHD::ptr()).uep2_ctrl__uh_rx_ctrl.modify(
                 |_, w| w.mask_uep_r_res().bits(0b10) // OUT NAK
@@ -116,7 +114,7 @@ pub fn cdc_data_in() {
     let mut count = 0;
     unsafe {
         for i in 0..MAX_LEN as usize {
-            match RING_BUFFER.pop() {
+            match RX_BUFFER.pop() {
                 Some(val) => {
                     BUFFER.ep3_tx[i] = val;
                     count += 1;
@@ -128,7 +126,7 @@ pub fn cdc_data_in() {
         }
         (*USBHD::ptr()).uep3_t_len__uh_tx_len.write(|w| w.bits(count as u16));
 
-        if WAIT_DATA_OUT & (RING_BUFFER.space() >= MAX_LEN * 2) {
+        if WAIT_DATA_OUT & (TX_BUFFER.space() >= MAX_LEN * 2) {
             // Ack next
             (*USBHD::ptr()).uep2_ctrl__uh_rx_ctrl.modify(
                 |_, w| w.mask_uep_r_res().bits(0b0) // OUT ACK
@@ -137,3 +135,11 @@ pub fn cdc_data_in() {
         }
     }
 }
+
+pub fn setup_serial() {
+    unsafe {
+        let _ = SPEED_BUFFER.push(BUFFER.ep0.serial_config.speed);
+    }
+}
+
+pub fn set_control_lines() {}

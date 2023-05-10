@@ -14,7 +14,7 @@ use panic_halt as _;
 
 // use ch32v1::ch32v103; // PAC for CH32V103
 use ch32v1::ch32v103::Peripherals;
-use ch32v1::ch32v103::{ RCC, TIM1, PFIC };
+use ch32v1::ch32v103::{ RCC, TIM1, PFIC, USART1 };
 use ch32v1::ch32v103::interrupt::Interrupt;
 
 use ch32v103_hal::prelude::*;
@@ -24,14 +24,10 @@ use ch32v103_hal::delay::*;
 use ch32v103_hal::gpio::gpiob::PB15;
 use ch32v103_hal::gpio::gpioa::PA7;
 
-use core::fmt::Write; // required for writeln!
 use ch32v103_hal::serial::*;
 
 mod usb;
 use usb::handler::{ init_usb, usb_interrupt_handler };
-
-use rand::SeedableRng;
-use rand::Rng;
 
 type LedPin = PB15<Output<PushPull>>;
 static LED: Mutex<RefCell<Option<LedPin>>> = Mutex::new(RefCell::new(None));
@@ -44,23 +40,10 @@ use ring_buffer::RingBuffer;
 
 use crate::usb::handler::MAX_LEN;
 const RING_BUFFER_SIZE: usize = MAX_LEN * 4;
-pub static mut RING_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
+pub static mut TX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
+pub static mut RX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 
-const HELLO: [u8; 13] = [
-    b'H',
-    b'e',
-    b'l',
-    b'l',
-    b'o',
-    b' ',
-    b'w',
-    b'o',
-    b'r',
-    b'l',
-    b'd',
-    b'\r',
-    b'\n',
-];
+pub static mut SPEED_BUFFER: RingBuffer<u32, 8> = RingBuffer::new();
 
 interrupt!(TIM1_UP, tim1_up);
 fn tim1_up() {
@@ -105,10 +88,9 @@ fn main() -> ! {
     //  remapped ports
     // let pb6 = gpiob.pb6.into_multiplex_push_pull_output();
     // let pb7 = gpiob.pb7.into_floating_input();
-
     let usart = Serial::usart1(peripherals.USART1, (pa9, pa10), (115200).bps(), &clocks);
-    let (tx, _) = usart.split();
-    let mut log = SerialWriter::new(tx);
+    let usart_base_freq = usart.get_base_freq();
+    let (mut tx, mut rx) = usart.split();
 
     delay.delay_ms(200);
     trigger.toggle().unwrap();
@@ -119,22 +101,44 @@ fn main() -> ! {
     init_usb();
 
     led1.set_low().unwrap();
-    writeln!(&mut log, "-").unwrap();
-
-    let mut rng = rand::rngs::SmallRng::from_seed([0; 16]);
 
     loop {
-        delay.delay_ms(500);
-        push_until_ok!(RING_BUFFER, rng.gen::<u8>() / 26 + 65);
-        writeln!(&mut log, "3").unwrap();
-        push_until_ok!(RING_BUFFER, b':');
-        writeln!(&mut log, "4").unwrap();
-
-        for i in 0..HELLO.len() {
-            push_until_ok!(RING_BUFFER, HELLO[i]);
+        let popped_speed = unsafe { SPEED_BUFFER.pop() };
+        match popped_speed {
+            Some(speed) => {
+                set_usart1_bps(speed.bps(), usart_base_freq);
+            }
+            None => {}
         }
-        writeln!(&mut log, "F").unwrap();
+
+        if tx.is_ready() {
+            let popped_tx = unsafe { TX_BUFFER.pop() };
+            match popped_tx {
+                Some(val) => {
+                    // send from USART
+                    let _ = tx.write(val);
+                }
+                None => {}
+            }
+        }
+
+        // check USART and push to RX_BUFFER
+        if !rx.is_empty() {
+            match rx.read() {
+                Ok(data) => {
+                    unsafe {
+                        let _ = RX_BUFFER.push(data);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
+}
+
+fn set_usart1_bps(baud_rate: Bps, base_freq: Hertz) {
+    let brr_div: u32 = base_freq.0 / baud_rate.0;
+    unsafe { (*USART1::ptr()).brr.write(|w| w.bits(brr_div)) }
 }
 
 fn setup_timer1(clocks: &Clocks) {

@@ -11,6 +11,8 @@ use crate::usb::usb_serial::{
     cdc_command_in,
     cdc_data_in,
     cdc_data_out,
+    setup_serial,
+    set_control_lines,
 };
 
 static mut DESC_IDX: DescIndex = DescIndex::Stalled;
@@ -70,14 +72,24 @@ struct SetupData {
     length: u16,
 }
 
-union SetupBuffer {
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct SerialConfigData {
+    pub speed: u32,
+    pub stop_bits: u8,
+    pub parity_type: u8,
+    pub data_bits: u8,
+}
+
+pub union SetupBuffer {
     bytes: [u8; 64],
     setup: SetupData,
+    pub serial_config: SerialConfigData,
 }
 
 #[repr(C, align(4))]
 pub struct AlignedBuffer {
-    ep0: SetupBuffer,
+    pub ep0: SetupBuffer,
     pub ep1_cmd: [u8; MAX_LEN],
     pub ep2_rx: [u8; MAX_LEN],
     pub ep3_tx: [u8; MAX_LEN],
@@ -289,10 +301,14 @@ pub fn usb_interrupt_handler() {
                                         // CDC class specific requets
                                         Request::SetLineCoding => {
                                             USB_STATE = UsbState::Ack;
+                                            // make_trigger();
+                                            setup_serial();
                                         }
                                         // Request::GetLineCoding => {}
                                         Request::SetControlLineState => {
                                             USB_STATE = UsbState::Ack;
+                                            // make_trigger();
+                                            set_control_lines();
                                         }
                                         _ => {
                                             unreachable!();
@@ -417,7 +433,6 @@ pub fn usb_interrupt_handler() {
                         }
                         0b10 => {
                             // IN
-                            // make_trigger();
                             cdc_data_in();
                         }
                         0b00 => {
