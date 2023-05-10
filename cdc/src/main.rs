@@ -44,6 +44,7 @@ pub static mut TX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 pub static mut RX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 
 pub static mut SPEED_BUFFER: RingBuffer<u32, 4> = RingBuffer::new();
+pub static mut CONTROL_BUFFER: RingBuffer<u8, 4> = RingBuffer::new();
 
 interrupt!(TIM1_UP, tim1_up);
 fn tim1_up() {
@@ -92,6 +93,11 @@ fn main() -> ! {
     let usart_base_freq = usart.get_base_freq();
     let (mut tx, mut rx) = usart.split();
 
+    let mut dtr = gpiob.pb8.into_push_pull_output();
+    let mut rts = gpiob.pb9.into_push_pull_output();
+    dtr.set_high().unwrap();
+    rts.set_high().unwrap();
+
     delay.delay_ms(200);
     trigger.toggle().unwrap();
     critical_section::with(|cs| {
@@ -111,6 +117,36 @@ fn main() -> ! {
             None => {}
         }
 
+        let popped_control = unsafe { CONTROL_BUFFER.pop() };
+        match popped_control {
+            Some(control) => {
+                // control GPIOs for DTR and RTS
+                // bit 0: DTR
+                // bit 1: RTS
+                match control & 0x03 {
+                    0b00 => {
+                        dtr.set_high().unwrap();
+                        rts.set_high().unwrap();
+                    }
+                    0b01 => {
+                        dtr.set_low().unwrap();
+                        rts.set_high().unwrap();
+                    }
+                    0b10 => {
+                        dtr.set_high().unwrap();
+                        rts.set_low().unwrap();
+                    }
+                    0b11 => {
+                        dtr.set_low().unwrap();
+                        rts.set_low().unwrap();
+                    }
+                    _ => {
+                        unreachable!();
+                    }
+                }
+            }
+            None => {}
+        }
         if tx.is_ready() {
             let popped_tx = unsafe { TX_BUFFER.pop() };
             match popped_tx {

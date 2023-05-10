@@ -1,7 +1,7 @@
 use ch32v1::ch32v103::{ USBHD };
 
 use crate::usb::handler::{ BUFFER, MAX_LEN };
-use crate::{ TX_BUFFER, RX_BUFFER, SPEED_BUFFER };
+use crate::{ TX_BUFFER, RX_BUFFER, SPEED_BUFFER, CONTROL_BUFFER };
 
 static mut WAIT_DATA_OUT: bool = false;
 
@@ -142,4 +142,8 @@ pub fn setup_serial() {
     }
 }
 
-pub fn set_control_lines() {}
+pub fn set_control_lines(value: u16) {
+    unsafe {
+        let _ = CONTROL_BUFFER.push((value & 0xff) as u8);
+    }
+}

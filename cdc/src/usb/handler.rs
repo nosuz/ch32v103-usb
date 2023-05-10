@@ -313,8 +313,8 @@ pub fn usb_interrupt_handler() {
                                         Request::SetControlLineState => {
                                             // SetControlLineState = 0x22
                                             USB_STATE = UsbState::Ack;
-                                            // make_trigger();
-                                            set_control_lines();
+                                            make_trigger();
+                                            set_control_lines(BUFFER.ep0.setup.value);
                                         }
                                         _ => {
                                             unreachable!();
