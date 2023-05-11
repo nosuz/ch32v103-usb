@@ -173,7 +173,9 @@ fn main() -> ! {
 
 fn set_usart1_bps(baud_rate: Bps, base_freq: Hertz) {
     let brr_div: u32 = base_freq.0 / baud_rate.0;
-    unsafe { (*USART1::ptr()).brr.write(|w| w.bits(brr_div)) }
+    unsafe {
+        (*USART1::ptr()).brr.write(|w| w.bits(brr_div));
+    }
 }
 
 fn setup_timer1(clocks: &Clocks) {
