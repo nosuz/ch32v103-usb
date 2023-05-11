@@ -182,7 +182,7 @@ fn setup_timer1(clocks: &Clocks) {
     unsafe {
         (*RCC::ptr()).apb2pcenr.modify(|_, w| w.tim1en().set_bit());
 
-        let prescale = (clocks.hclk().0 / 1_000_000) * 100 - 1; // count for 0.1ms
+        let prescale = (clocks.pclk2().0 / 1_000_000) * 100 - 1; // count for 0.1ms
         (*TIM1::ptr()).psc.write(|w| w.bits(prescale as u16));
         let down_count: u16 = 300 * 10 - 1; // 0.1ms * 10 * 300 = 300ms
         (*TIM1::ptr()).cnt.write(|w| w.bits(down_count));
