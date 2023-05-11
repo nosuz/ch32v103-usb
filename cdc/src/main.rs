@@ -97,6 +97,7 @@ fn main() -> ! {
     let mut rts = gpiob.pb9.into_push_pull_output();
     dtr.set_high().unwrap();
     rts.set_high().unwrap();
+    let mut control_state: u8 = 0;
 
     delay.delay_ms(200);
     trigger.toggle().unwrap();
@@ -123,27 +124,25 @@ fn main() -> ! {
                 // control GPIOs for DTR and RTS
                 // bit 0: DTR
                 // bit 1: RTS
-                match control & 0x03 {
+                match (control & 0x03) ^ control_state {
                     0b00 => {
-                        dtr.set_high().unwrap();
-                        rts.set_high().unwrap();
+                        // no state changed
                     }
                     0b01 => {
-                        dtr.set_low().unwrap();
-                        rts.set_high().unwrap();
+                        dtr.toggle().unwrap();
                     }
                     0b10 => {
-                        dtr.set_high().unwrap();
-                        rts.set_low().unwrap();
+                        rts.toggle().unwrap();
                     }
                     0b11 => {
-                        dtr.set_low().unwrap();
-                        rts.set_low().unwrap();
+                        dtr.toggle().unwrap();
+                        rts.toggle().unwrap();
                     }
                     _ => {
                         unreachable!();
                     }
                 }
+                control_state = control & 0x03;
             }
             None => {}
         }
