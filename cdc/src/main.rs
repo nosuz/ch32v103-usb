@@ -14,14 +14,14 @@ use panic_halt as _;
 
 // use ch32v1::ch32v103; // PAC for CH32V103
 use ch32v1::ch32v103::Peripherals;
-use ch32v1::ch32v103::{ RCC, TIM1, PFIC, USART1 };
+use ch32v1::ch32v103::{ RCC, TIM1, TIM3, PFIC, USART1 };
 use ch32v1::ch32v103::interrupt::Interrupt;
 
 use ch32v103_hal::prelude::*;
 use ch32v103_hal::rcc::*;
 use ch32v103_hal::gpio::*;
 use ch32v103_hal::delay::*;
-use ch32v103_hal::gpio::gpiob::PB15;
+use ch32v103_hal::gpio::gpiob::{ PB15, PB2 };
 use ch32v103_hal::gpio::gpioa::PA7;
 
 use ch32v103_hal::serial::*;
@@ -31,6 +31,9 @@ use usb::handler::{ init_usb, usb_interrupt_handler };
 
 type LedPin = PB15<Output<PushPull>>;
 static LED: Mutex<RefCell<Option<LedPin>>> = Mutex::new(RefCell::new(None));
+
+type ActivityPin = PB2<Output<PushPull>>;
+static ACTIVITY: Mutex<RefCell<Option<ActivityPin>>> = Mutex::new(RefCell::new(None));
 
 type TriggerPin = PA7<Output<PushPull>>;
 static TRIGGER: Mutex<RefCell<Option<TriggerPin>>> = Mutex::new(RefCell::new(None));
@@ -45,6 +48,9 @@ pub static mut RX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 
 pub static mut SPEED_BUFFER: RingBuffer<u32, 4> = RingBuffer::new();
 pub static mut CONTROL_BUFFER: RingBuffer<u8, 4> = RingBuffer::new();
+
+static mut ACTIVE_SERIAL: bool = false;
+static mut ACTIVITY_TICK: bool = false;
 
 interrupt!(TIM1_UP, tim1_up);
 fn tim1_up() {
@@ -71,7 +77,7 @@ fn main() -> ! {
     let mut trigger = gpioa.pa7.into_push_pull_output();
 
     let gpiob = peripherals.GPIOB.split();
-    let mut led1 = gpiob.pb2.into_push_pull_output();
+    let led1 = gpiob.pb2.into_push_pull_output();
     let led2 = gpiob.pb15.into_push_pull_output();
 
     let mut delay = Delay::new(&clocks);
@@ -82,6 +88,12 @@ fn main() -> ! {
     });
 
     setup_timer1(&clocks);
+
+    critical_section::with(|cs| {
+        ACTIVITY.borrow(cs).replace(Some(led1));
+    });
+
+    setup_timer3(&clocks);
 
     // Serial
     let pa9 = gpioa.pa9.into_multiplex_push_pull_output();
@@ -106,8 +118,6 @@ fn main() -> ! {
     });
 
     init_usb();
-
-    led1.set_low().unwrap();
 
     loop {
         let popped_speed = unsafe { SPEED_BUFFER.pop() };
@@ -152,6 +162,9 @@ fn main() -> ! {
                 Some(val) => {
                     // send from USART
                     let _ = tx.write(val);
+                    unsafe {
+                        ACTIVE_SERIAL = true;
+                    }
                 }
                 None => {}
             }
@@ -163,6 +176,7 @@ fn main() -> ! {
                 Ok(data) => {
                     unsafe {
                         let _ = RX_BUFFER.push(data);
+                        ACTIVE_SERIAL = true;
                     }
                 }
                 _ => {}
@@ -185,19 +199,81 @@ fn setup_timer1(clocks: &Clocks) {
         let prescale = (clocks.pclk2().0 / 1_000_000) * 100 - 1; // count for 0.1ms
         (*TIM1::ptr()).psc.write(|w| w.bits(prescale as u16));
         let down_count: u16 = 300 * 10 - 1; // 0.1ms * 10 * 300 = 300ms
-        // (*TIM1::ptr()).cnt.write(|w| w.bits(down_count));
+        (*TIM1::ptr()).cnt.write(|w| w.bits(down_count));
         (*TIM1::ptr()).atrlr.write(|w| w.bits(down_count));
-        (*TIM1::ptr()).ctlr1.modify(|_, w| w.arpe().set_bit().cen().set_bit());
-
-        // clear interupt requist by the above counter update
-        // (*TIM1::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
-        // (*PFIC::ptr()).iprr2.write(|w| w.bits(0b1 << ((Interrupt::TIM1_UP as u32) - 32)));
+        (*TIM1::ptr()).ctlr1.modify(|_, w| w.arpe().set_bit().cen().clear_bit());
+        // apply setting
+        (*TIM1::ptr()).swevgr.write(|w| w.ug().set_bit());
 
         // enable interrupt on Update. All 3 lines are require to enable correct interrupt.
         (*PFIC::ptr()).ienr2.modify(|_, w| w.bits(0b1 << ((Interrupt::TIM1_UP as u32) - 32)));
+        // clear interrupt flag
+        (*TIM1::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
+        // enable update interrupt
         (*TIM1::ptr()).dmaintenr.modify(|_, w| w.uie().set_bit());
         riscv::interrupt::enable();
+
+        // start timer
+        (*TIM1::ptr()).ctlr1.modify(|_, w| w.cen().set_bit());
     }
 }
 
 interrupt!(USBHD, usb_interrupt_handler);
+
+fn setup_timer3(clocks: &Clocks) {
+    // APB1
+    unsafe {
+        (*RCC::ptr()).apb1pcenr.modify(|_, w| w.tim3en().set_bit());
+
+        (*TIM3::ptr()).smcfgr.modify(|_, w| w.sms().bits(0)); // Driven by the internal clock CK_INT
+
+        let prescale = (clocks.pclk1().0 / 1_000_000) * 100 - 1; // count for 0.1ms
+        (*TIM3::ptr()).psc.write(|w| w.bits(prescale as u16));
+
+        let down_count: u16 = 10 * 50 - 1; // 0.1ms * 10 * 50 = 50ms
+        // set cnt make interrupt
+        (*TIM3::ptr()).cnt.write(|w| w.bits(down_count));
+        (*TIM3::ptr()).atrlr.write(|w| w.bits(down_count));
+
+        (*TIM3::ptr()).ctlr1.modify(|_, w| w.arpe().set_bit().cen().clear_bit());
+
+        // apply setting
+        (*TIM3::ptr()).swevgr.write(|w| w.ug().set_bit());
+
+        // enable interrupt on Update. All 3 lines are require to enable correct interrupt.
+        (*PFIC::ptr()).ienr2.modify(|r, w|
+            w.bits(r.bits() | (0b1 << ((Interrupt::TIM3 as u32) - 32)))
+        );
+        // clear interrupt flag
+        (*TIM3::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
+        // enable update interrupt
+        (*TIM3::ptr()).dmaintenr.modify(|_, w| w.uie().set_bit());
+        riscv::interrupt::enable();
+
+        // start counter
+        (*TIM3::ptr()).ctlr1.modify(|_, w| w.cen().set_bit());
+    }
+}
+
+interrupt!(TIM3, timer3_handler);
+fn timer3_handler() {
+    unsafe {
+        (*TIM3::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
+        ACTIVITY_TICK = !ACTIVITY_TICK;
+
+        critical_section::with(|cs| {
+            let mut led = ACTIVITY.borrow(cs).borrow_mut();
+            match ACTIVITY_TICK {
+                true => {
+                    if ACTIVE_SERIAL {
+                        led.as_mut().unwrap().set_low().unwrap();
+                        ACTIVE_SERIAL = false;
+                    }
+                }
+                false => {
+                    led.as_mut().unwrap().set_high().unwrap();
+                }
+            }
+        });
+    }
+}
