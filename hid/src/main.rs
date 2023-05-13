@@ -119,17 +119,23 @@ fn setup_timer1(clocks: &Clocks) {
         let prescale = (clocks.pclk2().0 / 1_000_000) * 100 - 1; // count for 0.1ms
         (*TIM1::ptr()).psc.write(|w| w.bits(prescale as u16));
         let down_count: u16 = 300 * 10 - 1; // 0.1ms * 10 * 300 = 300ms
-        // (*TIM1::ptr()).cnt.write(|w| w.bits(down_count));
+        (*TIM1::ptr()).cnt.write(|w| w.bits(down_count));
         (*TIM1::ptr()).atrlr.write(|w| w.bits(down_count));
-        (*TIM1::ptr()).ctlr1.modify(|_, w| w.arpe().set_bit().cen().set_bit());
-
-        // clear interupt requist by the above counter update
-        // (*TIM1::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
-        // (*PFIC::ptr()).iprr2.write(|w| w.bits(0b1 << ((Interrupt::TIM1_UP as u32) - 32)));
+        (*TIM1::ptr()).ctlr1.modify(|_, w| w.arpe().set_bit().cen().clear_bit());
+        // apply setting
+        (*TIM1::ptr()).swevgr.write(|w| w.ug().set_bit());
 
         // enable interrupt on Update. All 3 lines are require to enable correct interrupt.
-        (*PFIC::ptr()).ienr2.modify(|_, w| w.bits(0b1 << ((Interrupt::TIM1_UP as u32) - 32)));
+        (*PFIC::ptr()).ienr2.modify(|r, w|
+            w.bits(r.bits() | (0b1 << ((Interrupt::TIM1_UP as u32) - 32)))
+        );
+        // clear interrupt flag
+        (*TIM1::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
+        // enable update interrupt
         (*TIM1::ptr()).dmaintenr.modify(|_, w| w.uie().set_bit());
         riscv::interrupt::enable();
+
+        // start timer
+        (*TIM1::ptr()).ctlr1.modify(|_, w| w.cen().set_bit());
     }
 }

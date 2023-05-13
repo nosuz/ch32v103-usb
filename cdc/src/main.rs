@@ -206,7 +206,9 @@ fn setup_timer1(clocks: &Clocks) {
         (*TIM1::ptr()).swevgr.write(|w| w.ug().set_bit());
 
         // enable interrupt on Update. All 3 lines are require to enable correct interrupt.
-        (*PFIC::ptr()).ienr2.modify(|_, w| w.bits(0b1 << ((Interrupt::TIM1_UP as u32) - 32)));
+        (*PFIC::ptr()).ienr2.modify(|r, w|
+            w.bits(r.bits() | (0b1 << ((Interrupt::TIM1_UP as u32) - 32)))
+        );
         // clear interrupt flag
         (*TIM1::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
         // enable update interrupt
