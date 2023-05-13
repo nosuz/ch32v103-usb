@@ -93,7 +93,7 @@ fn main() -> ! {
         ACTIVITY.borrow(cs).replace(Some(led1));
     });
 
-    setup_timer3(&clocks);
+    setup_activity_timer(&clocks);
 
     // Serial
     let pa9 = gpioa.pa9.into_multiplex_push_pull_output();
@@ -156,6 +156,7 @@ fn main() -> ! {
             }
             None => {}
         }
+
         if tx.is_ready() {
             let popped_tx = unsafe { TX_BUFFER.pop() };
             match popped_tx {
@@ -222,7 +223,7 @@ fn setup_timer1(clocks: &Clocks) {
 
 interrupt!(USBHD, usb_interrupt_handler);
 
-fn setup_timer3(clocks: &Clocks) {
+fn setup_activity_timer(clocks: &Clocks) {
     // APB1
     unsafe {
         (*RCC::ptr()).apb1pcenr.modify(|_, w| w.tim3en().set_bit());
@@ -257,8 +258,8 @@ fn setup_timer3(clocks: &Clocks) {
     }
 }
 
-interrupt!(TIM3, timer3_handler);
-fn timer3_handler() {
+interrupt!(TIM3, activity_timer_handler);
+fn activity_timer_handler() {
     unsafe {
         (*TIM3::ptr()).intfr.modify(|_, w| w.uif().clear_bit());
         ACTIVITY_TICK = !ACTIVITY_TICK;
