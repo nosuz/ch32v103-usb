@@ -27,10 +27,6 @@ use ch32v103_hal::gpio::gpioa::PA7;
 use core::fmt::Write; // required for writeln!
 use ch32v103_hal::serial::*;
 
-mod usb;
-use usb::handler::{ init_usb, usb_interrupt_handler };
-use usb::hid_mouse::{ MouseStatus, update_mouse };
-
 use rand::SeedableRng;
 use rand::Rng;
 
@@ -39,6 +35,10 @@ static LED: Mutex<RefCell<Option<LedPin>>> = Mutex::new(RefCell::new(None));
 
 type TriggerPin = PA7<Output<PushPull>>;
 static TRIGGER: Mutex<RefCell<Option<TriggerPin>>> = Mutex::new(RefCell::new(None));
+
+mod usb;
+use crate::usb::handler::Usb;
+use crate::usb::hid_mouse::{ update_mouse, MouseStatus };
 
 interrupt!(TIM1_UP, tim1_up);
 fn tim1_up() {
@@ -51,8 +51,6 @@ fn tim1_up() {
         led.as_mut().unwrap().toggle().unwrap();
     });
 }
-
-interrupt!(USBHD, usb_interrupt_handler);
 
 #[entry]
 fn main() -> ! {
@@ -100,7 +98,7 @@ fn main() -> ! {
         TRIGGER.borrow(cs).replace(Some(trigger));
     });
 
-    init_usb();
+    Usb::init((usb_dp, usb_dm));
 
     let mut rng = rand::rngs::SmallRng::from_seed([0; 16]);
     loop {

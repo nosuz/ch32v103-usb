@@ -1,5 +1,9 @@
+use ch32v_rt::interrupt;
 use ch32v1::ch32v103::{ RCC, PFIC, USBHD };
 use ch32v1::ch32v103::interrupt::Interrupt;
+
+use ch32v103_hal::gpio::gpioa::{ PA11, PA12 };
+use ch32v103_hal::gpio::{ Output, PushPull, OpenDrain };
 
 use ch32v103_hal::prelude::ToggleableOutputPin;
 use crate::TRIGGER;
@@ -76,63 +80,82 @@ pub static mut BUFFER: AlignedBuffer = AlignedBuffer {
     ep1: MouseBuffer { bytes: [0; 64] },
 };
 
-pub fn init_usb() {
-    init_mouse();
+pub trait UsbPort {}
 
-    //   USB_CTRL    = bUC_DEV_PU_EN               // USB internal pull-up enable
-    //               | bUC_INT_BUSY                // Return NAK if USB INT flag not clear
-    //               | bUC_DMA_EN;                 // DMA enable
-    //   UDEV_CTRL   = bUD_PD_DIS                  // Disable UDP/UDM pulldown resistor
-    //               | bUD_PORT_EN;                // Enable port, full-speed
+impl UsbPort for PA11<Output<PushPull>> {}
+impl UsbPort for PA12<Output<PushPull>> {}
+impl UsbPort for PA11<Output<OpenDrain>> {}
+impl UsbPort for PA12<Output<OpenDrain>> {}
 
-    //   USB_CTRL   |= bUC_LOW_SPEED;
-    //   UDEV_CTRL  |= bUD_LOW_SPEED;
+pub struct Usb<PINS> {
+    pins: PINS,
+}
 
-    unsafe {
-        (*RCC::ptr()).ahbpcenr.modify(|_, w| w.usbhden().set_bit());
-        // reset USBHD
-        (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().set_bit()); // AHBRSTR
-        (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().clear_bit()); // AHBRSTR
-        // (*RCC::ptr()).ahbpcenr.modify(|_, w| w.usbhden().set_bit());
+impl<DP, DM> Usb<(DP, DM)> {
+    pub fn init(pins: (DP, DM)) where DP: UsbPort, DM: UsbPort {
+        init_mouse();
 
-        (*USBHD::ptr()).usb_ctrl.modify(|_, w|
-            w
-                .uc_host_mode()
-                .clear_bit() // set device mode
-                .uc_low_speed()
-                .bit(cfg!(not(feature = "full_speed"))) // true: 1.5M low-speed, false: 12M full-speed
-                .mask_uc_sys_ctrl()
-                .bits(0b11)
-                .uc_int_busy() // *
-                .set_bit()
-                // both uc_reset_sie and uc_clr_all are cleared.
-                .uc_reset_sie()
-                .clear_bit()
-                .uc_clr_all()
-                .clear_bit()
-                .uc_dma_en() // *
-                .set_bit()
-        );
+        //   USB_CTRL    = bUC_DEV_PU_EN               // USB internal pull-up enable
+        //               | bUC_INT_BUSY                // Return NAK if USB INT flag not clear
+        //               | bUC_DMA_EN;                 // DMA enable
+        //   UDEV_CTRL   = bUD_PD_DIS                  // Disable UDP/UDM pulldown resistor
+        //               | bUD_PORT_EN;                // Enable port, full-speed
 
-        (*USBHD::ptr()).udev_ctrl__uhost_ctrl.modify(|_, w|
-            w
-                .ud_pd_dis__uh_pd_dis()
-                .set_bit()
-                .ud_low_speed__uh_low_speed()
-                .bit(cfg!(not(feature = "full_speed"))) // true: 1.5M low-speed, false: 12M full-speed
-                .ud_port_en__uh_port_en()
-                .set_bit()
-        );
+        //   USB_CTRL   |= bUC_LOW_SPEED;
+        //   UDEV_CTRL  |= bUD_LOW_SPEED;
 
-        setup_ep0();
+        unsafe {
+            (*RCC::ptr()).ahbpcenr.modify(|_, w| w.usbhden().set_bit());
+            // reset USBHD
+            (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().set_bit()); // AHBRSTR
+            (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().clear_bit()); // AHBRSTR
+            // (*RCC::ptr()).ahbpcenr.modify(|_, w| w.usbhden().set_bit());
 
-        // enable interrupts for USB
-        (*USBHD::ptr()).usb_int_en.modify(|_, w|
-            w.uie_suspend().set_bit().uie_transfer().set_bit().uie_bus_rst__uie_detect().set_bit()
-        );
-        (*USBHD::ptr()).usb_int_fg.write(|w| w.bits(0x1f)); // clear all interrupts
-        (*PFIC::ptr()).ienr2.modify(|_, w| w.bits(0b1 << ((Interrupt::USBHD as u32) - 32)));
-        riscv::interrupt::enable();
+            (*USBHD::ptr()).usb_ctrl.modify(|_, w|
+                w
+                    .uc_host_mode()
+                    .clear_bit() // set device mode
+                    .uc_low_speed()
+                    .bit(cfg!(not(feature = "full_speed"))) // true: 1.5M low-speed, false: 12M full-speed
+                    .mask_uc_sys_ctrl()
+                    .bits(0b11)
+                    .uc_int_busy() // *
+                    .set_bit()
+                    // both uc_reset_sie and uc_clr_all are cleared.
+                    .uc_reset_sie()
+                    .clear_bit()
+                    .uc_clr_all()
+                    .clear_bit()
+                    .uc_dma_en() // *
+                    .set_bit()
+            );
+
+            (*USBHD::ptr()).udev_ctrl__uhost_ctrl.modify(|_, w|
+                w
+                    .ud_pd_dis__uh_pd_dis()
+                    .set_bit()
+                    .ud_low_speed__uh_low_speed()
+                    .bit(cfg!(not(feature = "full_speed"))) // true: 1.5M low-speed, false: 12M full-speed
+                    .ud_port_en__uh_port_en()
+                    .set_bit()
+            );
+
+            setup_ep0();
+
+            // enable interrupts for USB
+            (*USBHD::ptr()).usb_int_en.modify(|_, w|
+                w
+                    .uie_suspend()
+                    .set_bit()
+                    .uie_transfer()
+                    .set_bit()
+                    .uie_bus_rst__uie_detect()
+                    .set_bit()
+            );
+            (*USBHD::ptr()).usb_int_fg.write(|w| w.bits(0x1f)); // clear all interrupts
+            (*PFIC::ptr()).ienr2.modify(|_, w| w.bits(0b1 << ((Interrupt::USBHD as u32) - 32)));
+            riscv::interrupt::enable();
+        }
     }
 }
 
@@ -171,7 +194,8 @@ fn get_request_type(bm_request_type: u8) -> RequestType {
     }
 }
 
-pub fn usb_interrupt_handler() {
+interrupt!(USBHD, usb_interrupt_handler);
+fn usb_interrupt_handler() {
     // BUFFER.ep0.setup.request_type,
     // BUFFER.ep0.setup.request,
 

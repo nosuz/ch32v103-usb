@@ -26,9 +26,6 @@ use ch32v103_hal::gpio::gpioa::PA7;
 
 use ch32v103_hal::serial::*;
 
-mod usb;
-use usb::handler::{ init_usb, usb_interrupt_handler };
-
 type LedPin = PB15<Output<PushPull>>;
 static LED: Mutex<RefCell<Option<LedPin>>> = Mutex::new(RefCell::new(None));
 
@@ -38,10 +35,12 @@ static ACTIVITY: Mutex<RefCell<Option<ActivityPin>>> = Mutex::new(RefCell::new(N
 type TriggerPin = PA7<Output<PushPull>>;
 static TRIGGER: Mutex<RefCell<Option<TriggerPin>>> = Mutex::new(RefCell::new(None));
 
+mod usb;
+use crate::usb::handler::Usb;
+use crate::usb::handler::MAX_LEN;
+
 pub mod ring_buffer;
 use ring_buffer::RingBuffer;
-
-use crate::usb::handler::MAX_LEN;
 const RING_BUFFER_SIZE: usize = MAX_LEN * 4;
 pub static mut TX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
 pub static mut RX_BUFFER: RingBuffer<u8, RING_BUFFER_SIZE> = RingBuffer::new();
@@ -122,7 +121,7 @@ fn main() -> ! {
         TRIGGER.borrow(cs).replace(Some(trigger));
     });
 
-    init_usb();
+    Usb::init((usb_dp, usb_dm));
 
     loop {
         let popped_speed = unsafe { SPEED_BUFFER.pop() };
@@ -225,8 +224,6 @@ fn setup_timer1(clocks: &Clocks) {
         (*TIM1::ptr()).ctlr1.modify(|_, w| w.cen().set_bit());
     }
 }
-
-interrupt!(USBHD, usb_interrupt_handler);
 
 fn setup_activity_timer(clocks: &Clocks) {
     // APB1
