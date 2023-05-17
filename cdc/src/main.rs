@@ -76,6 +76,11 @@ fn main() -> ! {
     let gpioa = peripherals.GPIOA.split();
     let mut trigger = gpioa.pa7.into_push_pull_output();
 
+    let mut usb_dm = gpioa.pa11.into_push_pull_output();
+    let mut usb_dp = gpioa.pa12.into_push_pull_output();
+    usb_dm.set_low().unwrap();
+    usb_dp.set_low().unwrap();
+
     let gpiob = peripherals.GPIOB.split();
     let led1 = gpiob.pb2.into_push_pull_output();
     let led2 = gpiob.pb15.into_push_pull_output();
