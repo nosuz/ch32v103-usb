@@ -1,5 +1,5 @@
 use ch32v_rt::interrupt;
-use ch32v1::ch32v103::{ RCC, PFIC, USBHD };
+use ch32v1::ch32v103::{ RCC, EXTEND, PFIC, USBHD };
 use ch32v1::ch32v103::interrupt::Interrupt;
 
 use ch32v103_hal::gpio::gpioa::{ PA11, PA12 };
@@ -110,6 +110,8 @@ impl<DP, DM> Usb<(DP, DM)> {
             (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().set_bit()); // AHBRSTR
             (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().clear_bit()); // AHBRSTR
             // (*RCC::ptr()).ahbpcenr.modify(|_, w| w.usbhden().set_bit());
+            // route USBHD to PB6 and PB7
+            (*EXTEND::ptr()).extend_ctr.modify(|_, w| w.usbhdio().set_bit());
 
             (*USBHD::ptr()).usb_ctrl.modify(|_, w|
                 w
