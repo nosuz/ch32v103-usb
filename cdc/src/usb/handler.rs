@@ -138,7 +138,6 @@ impl<DP, DM> Usb<(DP, DM)> {
             // reset USBHD
             (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().set_bit()); // AHBRSTR
             (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().clear_bit()); // AHBRSTR
-            // (*RCC::ptr()).ahbpcenr.modify(|_, w| w.usbhden().set_bit());
             // route USBHD to PB6 and PB7
             (*EXTEND::ptr()).extend_ctr.modify(|_, w| w.usbhdio().set_bit());
 
