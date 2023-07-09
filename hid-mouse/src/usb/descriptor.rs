@@ -58,7 +58,7 @@ const CONFIG_DESC: [u8; 34] = [
     0, // no country code
     1, // num of descriptor
     34, // descriptor type: report
-    54, // report descriptor length
+    50, // report descriptor length
     0,
 
     // // endpoint 1 OUT descriptor

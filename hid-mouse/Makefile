@@ -1,4 +1,4 @@
-PKG_NAME=ch32v103_usb_hid
+PKG_NAME=ch32v103_usb_mouse
 BIN_NAME=firmware.bin
 
 all: release
