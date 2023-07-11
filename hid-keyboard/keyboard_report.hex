@@ -1,0 +1,33 @@
+0x05, 0x01,                    // USAGE_PAGE (Generic Desktop),
+0x09, 0x06,                    // USAGE (Keyboard),
+0xA1, 0x01,                    // COLLECTION (Application),
+0x75, 0x01,                    // 　REPORT_SIZE (1),
+0x95, 0x08,                    // 　REPORT_COUNT (8),
+0x05, 0x07,                    // 　USAGE_PAGE (Key Codes),
+0x1A, 0xE0, 0x00,              // 　USAGE_MINIMUM (224),
+0x2A, 0xE7, 0x00,              // 　USAGE_MAXIMUM (231),
+0x15, 0x00,                    // 　LOGICAL_MINIMUM (0),
+0x25, 0x01,                    // 　LOGICAL_MAXIMUM (1),
+0x81, 0x02,                    // 　INPUT (Data,Var,Abs), ;Modifier byte
+0x95, 0x01,                    // 　REPORT_COUNT (1),
+0x75, 0x08,                    // 　REPORT_SIZE (8),
+0x81, 0x01,                    // 　INPUT (Cnst,Ary,Abs), ;Reserved byte
+0x95, 0x05,                    // 　REPORT_COUNT (5),
+0x75, 0x01,                    // 　REPORT_SIZE (1),
+0x05, 0x08,                    // 　USAGE_PAGE (LED),
+0x19, 0x01,                    // 　USAGE_MINIMUM (1),
+0x29, 0x05,                    // 　USAGE_MAXIMUM (5),
+0x91, 0x02,                    // 　OUTPUT (Data,Var,Abs), ;LED report
+0x95, 0x01,                    // 　REPORT_COUNT (1),
+0x75, 0x03,                    // 　REPORT_SIZE (3),
+0x91, 0x01,                    // 　OUTPUT (Cnst,Ary,Abs), ;LED report padding
+0x95, 0x06,                    // 　REPORT_COUNT (6),
+0x75, 0x08,                    // 　REPORT_SIZE (8),
+0x15, 0x00,                    // 　LOGICAL_MINIMUM (0),
+0x26, 0xFF, 0x00,              // 　LOGICAL_MAXIMUM(255),
+0x05, 0x07,                    // 　USAGE_PAGE (Key Codes),
+0x19, 0x00,                    // 　USAGE_MINIMUM (0),
+0x2A, 0xFF, 0x00,              // 　USAGE_MAXIMUM (255),
+0x81, 0x00,                    // 　INPUT (Data,Ary,Abs),
+0xC0,                          // END_COLLECTION
+// Total:67 Bytes, 0x0043 (swapped: 0x4300)
