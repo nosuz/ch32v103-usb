@@ -37,8 +37,8 @@ type TriggerPin = PA7<Output<PushPull>>;
 static TRIGGER: Mutex<RefCell<Option<TriggerPin>>> = Mutex::new(RefCell::new(None));
 
 mod usb;
-use crate::usb::handler::Usb;
-use crate::usb::hid_mouse::{ update_mouse, MouseStatus };
+use usb::handler::Usb;
+use usb::hid_mouse::{ update_mouse, MouseStatus };
 
 interrupt!(TIM1_UP, tim1_up);
 fn tim1_up() {
