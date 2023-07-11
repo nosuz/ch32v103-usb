@@ -21,7 +21,7 @@ use ch32v103_hal::prelude::*;
 use ch32v103_hal::rcc::*;
 use ch32v103_hal::gpio::*;
 use ch32v103_hal::delay::*;
-use ch32v103_hal::gpio::gpiob::PB15;
+use ch32v103_hal::gpio::gpiob::{ PB2, PB15 };
 use ch32v103_hal::gpio::gpioa::PA7;
 
 use core::fmt::Write; // required for writeln!
@@ -32,6 +32,9 @@ use rand::Rng;
 
 type LedPin = PB15<Output<PushPull>>;
 static LED: Mutex<RefCell<Option<LedPin>>> = Mutex::new(RefCell::new(None));
+
+type NumLockPin = PB2<Output<PushPull>>;
+static NUMLOCK: Mutex<RefCell<Option<NumLockPin>>> = Mutex::new(RefCell::new(None));
 
 type TriggerPin = PA7<Output<PushPull>>;
 static TRIGGER: Mutex<RefCell<Option<TriggerPin>>> = Mutex::new(RefCell::new(None));
@@ -80,12 +83,17 @@ fn main() -> ! {
 
     let gpiob = peripherals.GPIOB.split();
     let led = gpiob.pb15.into_push_pull_output();
+    let num_lock = gpiob.pb2.into_push_pull_output();
 
     let mut delay = Delay::new(&clocks);
 
     // https://docs.rs/critical-section/latest/critical_section/#
     critical_section::with(|cs| {
         LED.borrow(cs).replace(Some(led));
+    });
+
+    critical_section::with(|cs| {
+        NUMLOCK.borrow(cs).replace(Some(num_lock));
     });
 
     setup_timer1(&clocks);

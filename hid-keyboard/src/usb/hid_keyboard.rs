@@ -1,7 +1,9 @@
 use ch32v1::ch32v103::{ USBHD };
+use ch32v103_hal::prelude::OutputPin;
 
 use crate::usb::handler::BUFFER;
 use crate::KEY_BUFFER;
+use crate::NUMLOCK;
 
 pub enum KeyModifier {
     None = 0,
@@ -37,6 +39,14 @@ struct KeyboardData {
 pub union KeyboardBuffer {
     pub bytes: [u8; 64],
     keyboard: KeyboardData,
+}
+
+enum LedStatus {
+    NumLock = 0x01,
+    CapsLock = 0x02,
+    ScrollLock = 0x04,
+    Compose = 0x08,
+    Kana = 0x10,
 }
 
 pub fn init_keyboard() {
@@ -92,6 +102,17 @@ pub fn ep1_in() {
             }
         }
     }
+}
+
+pub fn update_keyboard_led(led_status: u8) {
+    critical_section::with(|cs| {
+        let mut num_lock = NUMLOCK.borrow(cs).borrow_mut();
+        if (led_status & (LedStatus::NumLock as u8)) == 0 {
+            num_lock.as_mut().unwrap().set_low().unwrap();
+        } else {
+            num_lock.as_mut().unwrap().set_high().unwrap();
+        }
+    });
 }
 
 pub fn ascii_to_usb_keycode(ascii_code: u8) -> Option<KeyStatus> {

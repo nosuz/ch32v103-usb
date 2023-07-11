@@ -9,7 +9,13 @@ use ch32v103_hal::prelude::ToggleableOutputPin;
 use crate::TRIGGER;
 
 use crate::usb::descriptor::{ USB_DESC, DescIndex };
-use crate::usb::hid_keyboard::{ KeyboardBuffer, init_keyboard, setup_ep1, ep1_in };
+use crate::usb::hid_keyboard::{
+    KeyboardBuffer,
+    init_keyboard,
+    setup_ep1,
+    ep1_in,
+    update_keyboard_led,
+};
 
 static mut DESC_IDX: DescIndex = DescIndex::Stalled;
 
@@ -51,6 +57,7 @@ enum UsbState {
     GetDescriptor,
     SetAddress,
     SetConfiguration,
+    SetReport,
 }
 static mut USB_STATE: UsbState = UsbState::Ack;
 
@@ -105,6 +112,7 @@ impl<DP, DM> Usb<(DP, DM)> {
         //   UDEV_CTRL  |= bUD_LOW_SPEED;
 
         unsafe {
+            // enable USBHD
             (*RCC::ptr()).ahbpcenr.modify(|_, w| w.usbhden().set_bit());
             // reset USBHD
             (*RCC::ptr()).ahbrstr.modify(|_, w| w.usbhdrst().set_bit()); // AHBRSTR
@@ -300,6 +308,10 @@ fn usb_interrupt_handler() {
                                         Request::GetInterface => {
                                             USB_STATE = UsbState::Ack;
                                         }
+                                        Request::SetConfiguration => {
+                                            // SET_REPORT
+                                            USB_STATE = UsbState::SetReport;
+                                        }
                                         _ => {
                                             unreachable!();
                                         }
@@ -368,6 +380,14 @@ fn usb_interrupt_handler() {
                         }
                         0b00 => {
                             // OUT
+                            match USB_STATE {
+                                UsbState::SetReport => {
+                                    update_keyboard_led(BUFFER.ep0.bytes[0]);
+                                }
+                                _ => {
+                                    // do nothing
+                                }
+                            }
                         }
                         _ => {
                             unreachable!();
