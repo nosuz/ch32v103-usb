@@ -131,19 +131,24 @@ fn main() -> ! {
         //     }
         // }
 
-        let chars = b"!\"#$%&'() @ ";
-        for chr in chars.iter() {
-            match ascii_to_usb_keycode(*chr) {
-                Some(key) => {
-                    push_until_ok!(KEY_BUFFER, key);
-                    push_until_ok!(KEY_BUFFER, KeyStatus { modifier: 0, code: 0 });
-                    writeln!(&mut log, "{},{}", key.modifier, key.code).unwrap();
-                }
-                None => {
-                    // pass
-                }
-            }
-        }
+        // let chars = b"!\"#$%&'() @ ";
+        // for chr in chars.iter() {
+        //     match ascii_to_usb_keycode(*chr) {
+        //         Some(key) => {
+        //             push_until_ok!(KEY_BUFFER, key);
+        //             push_until_ok!(KEY_BUFFER, KeyStatus { modifier: 0, code: 0 });
+        //             writeln!(&mut log, "{},{}", key.modifier, key.code).unwrap();
+        //         }
+        //         None => {
+        //             // pass
+        //         }
+        //     }
+        // }
+
+        // Toggle NumLock key
+        push_until_ok!(KEY_BUFFER, KeyStatus { modifier: 0, code: 0x53 });
+        push_until_ok!(KEY_BUFFER, KeyStatus { modifier: 0, code: 0 });
+
         delay.delay_ms(500);
     }
 }
